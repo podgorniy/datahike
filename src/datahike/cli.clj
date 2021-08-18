@@ -13,7 +13,7 @@
             [hitchhiker.tree.bootstrap.konserve :as kons]
             [konserve.cache :as kc]
             [hitchhiker.tree :as core]
-            [hitchhiker.tree.utils.async :as ha]
+            [hitchhiker.tree.utils.clojure.async :as ha]
             [hitchhiker.tree.messaging :as msg]
             [clojure.core.async :as async]))
 
