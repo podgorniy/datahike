@@ -27,7 +27,9 @@
                               cider/cider-nrepl           {:mvn/version "0.19.0"}
                               nrepl/nrepl                 {:mvn/version "0.5.3"}
                               clj-http/clj-http           {:mvn/version "3.11.0"}
-                              org.clojure/tools.cli       {:mvn/version "1.0.194"}}}
+                              org.clojure/tools.cli       {:mvn/version "1.0.194"}
+                              incanter/incanter-core      {:mvn/version "1.9.2"}
+                              incanter/incanter-charts    {:mvn/version "1.9.2"}}}
 
            :test {:extra-paths ["test"]
                   :extra-deps {org.clojure/clojurescript {:mvn/version "1.10.516"}
@@ -36,15 +38,21 @@
                                io.replikativ/datahike-leveldb {:mvn/version "0.1.0"}
                                io.replikativ/datahike-postgres {:mvn/version "0.3.1-SNAPSHOT"}}}
 
-           :repl {:extra-deps {cider/cider-nrepl           {:mvn/version "0.19.0"}
-                               nrepl/nrepl                 {:mvn/version "0.5.3"}
+           :repl {:extra-deps {cider/cider-nrepl           {:mvn/version "0.25.9"}
+                               nrepl/nrepl                 {:mvn/version "0.8.3"}
                                org.clojure/tools.namespace {:mvn/version "0.2.11"}}
                   :main-opts ["-m" "nrepl.cmdline" "--middleware" "[cider.nrepl/cider-middleware]"]}
+
+           :bench-dev {:extra-paths ["benchmark/src"]
+                       :extra-deps {clj-http/clj-http     {:mvn/version "3.11.0"}
+                                    org.clojure/tools.cli {:mvn/version "1.0.194"}}}
 
            :benchmark {:main-opts ["-m" "benchmark.core"]
                        :extra-paths ["benchmark/src"]
                        :extra-deps {clj-http/clj-http     {:mvn/version "3.11.0"}
-                                    org.clojure/tools.cli {:mvn/version "1.0.194"}}}
+                                    org.clojure/tools.cli {:mvn/version "1.0.194"}
+                                    incanter/incanter-core {:mvn/version "1.9.2"}
+                                    incanter/incanter-charts {:mvn/version "1.9.2"}}}
 
            :datomic {:extra-deps {com.datomic/datomic-free {:mvn/version "0.9.5703"}}}
 
