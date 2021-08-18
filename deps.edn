@@ -8,12 +8,8 @@
         environ/environ                             {:mvn/version "1.2.0"}
         com.taoensso/timbre                         {:mvn/version "5.1.2"}
         io.replikativ/superv.async                  {;; :mvn/version "0.2.11"
-                                                     :local/root "/home/christian/Development/superv.async/"
-                                                     ;; Unfortunately this is not yet finding the manifest file,
-                                                     ;; please checkout manually
-                                                     ;; :git/url "https://github.com/replikativ/superv.async.git"
-                                                     ;; :sha "fb2bebc85289481fa00a47511ba1d00822e1246a"
-                                                     }
+                                                     :git/url "https://github.com/replikativ/superv.async.git"
+                                                     :sha "f60eaf2f9916fcd7c802f1dfca439991b0d63422"}
         io.lambdaforge/datalog-parser               {:mvn/version "0.1.8"}
         io.replikativ/zufall                        {:mvn/version "0.1.0"}
         junit/junit                                 {:mvn/version "4.13.1"}}
