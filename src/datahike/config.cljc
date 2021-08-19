@@ -3,7 +3,6 @@
             [clojure.spec.alpha :as s]
             [zufall.core :as z]
             [environ.core :refer [env]]
-            [taoensso.timbre :as log]
             [datahike.store :as ds])
   (:import [java.net URI]))
 
@@ -14,6 +13,7 @@
 (s/def ::entity (s/or :map associative? :vec vector?))
 (s/def ::initial-tx (s/nilable (s/or :data (s/coll-of ::entity) :path string?)))
 (s/def ::name string?)
+(s/def ::crypto-hash? boolean?)
 
 (s/def ::store map?)
 
@@ -23,7 +23,8 @@
                                          ::schema-flexibility
                                          ::attribute-refs?
                                          ::initial-tx
-                                         ::name]))
+                                         ::name
+                                         ::crypto-hash?]))
 
 (s/def :deprecated/schema-on-read boolean?)
 (s/def :deprecated/temporal-index boolean?)
@@ -53,7 +54,8 @@
    :attribute-refs? false
    :initial-tx initial-tx
    :schema-flexibility (if (true? schema-on-read) :read :write)
-   :cache-size 100000})
+   :cache-size 100000
+   :crypto-hash? true})
 
 (defn int-from-env
   [key default]
@@ -100,7 +102,8 @@
    :name (z/rand-german-mammal)
    :attribute-refs? false
    :index :datahike.index/hitchhiker-tree
-   :cache-size 100000})
+   :cache-size 100000
+   :crypto-hash? true})
 
 (defn remove-nils
   "Thanks to https://stackoverflow.com/a/34221816"
@@ -132,7 +135,8 @@
                  :name (:datahike-name env (z/rand-german-mammal))
                  :schema-flexibility (keyword (:datahike-schema-flexibility env :write))
                  :index (keyword "datahike.index" (:datahike-index env "hitchhiker-tree"))
-                 :cache-size (:cache-size env 100000)}
+                 :cache-size (:cache-size env 100000)
+                 :crypto-hash? (bool-from-env :datahike-crypto-hash true)}
          merged-config ((comp remove-nils deep-merge) config config-as-arg)
          {:keys [keep-history? name schema-flexibility index initial-tx store attribute-refs?]} merged-config
          config-spec (ds/config-spec store)]

@@ -109,7 +109,7 @@
   (let [_ (delete-store folder)
         store (kons/add-hitchhiker-tree-handlers
                (kc/ensure-cache (async/<!! (new-fs-store folder))))
-        backend (kons/->KonserveBackend store)
+        backend (kons/konserve-backend store)
         op-count (atom 0)]
     (doseq [d data]
       (time

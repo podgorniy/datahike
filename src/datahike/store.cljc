@@ -68,7 +68,7 @@
 (defmethod empty-store :mem [{:keys [id]}]
   (if-let [store (get @memory id)]
     store
-    (let [store (mem/new-mem-store {:sync? true})]
+    (let [store (mem/new-mem-store (atom {}) {:sync? true})]
       (swap! memory assoc id store)
       store)))
 

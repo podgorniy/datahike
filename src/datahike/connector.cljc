@@ -26,7 +26,9 @@
                  (fn [stored-db]
                    (let [;; reconnect
                          config (:config @connection) ;; keep our config
-                         {:keys [eavt-key aevt-key avet-key temporal-eavt-key temporal-aevt-key temporal-avet-key schema rschema max-tx op-count hash]
+                         {:keys [eavt-key aevt-key avet-key
+                                 temporal-eavt-key temporal-aevt-key temporal-avet-key
+                                 schema rschema max-tx op-count hash]
                           :or {op-count 0}} stored-db
                          empty (db/empty-db nil)
                          conn (d/conn-from-db (assoc empty
@@ -44,19 +46,27 @@
                                                      :temporal-avet temporal-avet-key
                                                      :rschema rschema
                                                      :store store))
-                         _ (swap! conn assoc :transactor (t/create-transactor (:transactor config) conn update-and-flush-db))
+                         _ (swap! conn assoc
+                                  :transactor (t/create-transactor (:transactor config)
+                                                                   conn
+                                                                   update-and-flush-db))
 
                          {:keys [db-after] :as tx-report} @(update-fn conn tx-data)
-                         {:keys [eavt aevt avet temporal-eavt temporal-aevt temporal-avet schema rschema config max-tx op-count hash]} db-after
+                         {:keys [eavt aevt avet
+                                 temporal-eavt temporal-aevt temporal-avet
+                                 schema rschema config max-tx op-count hash]} db-after
                          _ (reset! report tx-report)
-                         backend (kons/->KonserveBackend store)
+                         backend (kons/konserve-backend store (:crypto-hash? config))
                          eavt-flushed (di/-flush eavt backend)
                          aevt-flushed (di/-flush aevt backend)
                          avet-flushed (di/-flush avet backend)
                          keep-history? (:keep-history? config)
-                         temporal-eavt-flushed (when keep-history? (di/-flush temporal-eavt backend))
-                         temporal-aevt-flushed (when keep-history? (di/-flush temporal-aevt backend))
-                         temporal-avet-flushed (when keep-history? (di/-flush temporal-avet backend))]
+                         temporal-eavt-flushed (when keep-history?
+                                                 (di/-flush temporal-eavt backend))
+                         temporal-aevt-flushed (when keep-history?
+                                                 (di/-flush temporal-aevt backend))
+                         temporal-avet-flushed (when keep-history?
+                                                 (di/-flush temporal-avet backend))]
                      (reset! connection (assoc db-after
                                                :eavt eavt-flushed
                                                :aevt aevt-flushed
@@ -109,7 +119,8 @@
 (defn load-entities [connection entities]
   (let [p (throwable-promise)]
     (go
-      (let [tx-report (<! (t/send-transaction! (:transactor @connection) entities 'datahike.core/load-entities))]
+      (let [tx-report (<! (t/send-transaction! (:transactor @connection)
+                                               entities 'datahike.core/load-entities))]
         (deliver p tx-report)))
     p))
 
@@ -174,7 +185,9 @@
               (ds/release-store store-config store)
               (dt/raise "Database does not exist." {:type :db-does-not-exist
                                                     :config config}))
-          {:keys [eavt-key aevt-key avet-key temporal-eavt-key temporal-aevt-key temporal-avet-key schema rschema config max-tx op-count hash]
+          {:keys [eavt-key aevt-key avet-key
+                  temporal-eavt-key temporal-aevt-key temporal-avet-key
+                  schema rschema config max-tx op-count hash]
            :or {op-count 0}} stored-db
           empty (db/empty-db nil config)
           conn (d/conn-from-db (assoc empty
@@ -192,21 +205,26 @@
                                       :temporal-avet temporal-avet-key
                                       :rschema rschema
                                       :store store))]
-      (swap! conn assoc :transactor (t/create-transactor (:transactor config) conn update-and-flush-db))
+      (swap! conn assoc :transactor (t/create-transactor (:transactor config)
+                                                         conn update-and-flush-db))
       conn))
 
   (-create-database [config & deprecated-config]
-    (let [{:keys [keep-history? initial-tx] :as config} (dc/load-config config deprecated-config)
+    (let [{:keys [keep-history? initial-tx] :as config}
+          (dc/load-config config deprecated-config)
           store-config (:store config)
           store (kc/ensure-cache
                  (ds/empty-store store-config)
                  (atom (cache/lru-cache-factory {} :threshold 1000)))
           stored-db (k/get-in store [:db] nil {:sync? true})
           _ (when stored-db
-              (dt/raise "Database already exists." {:type :db-already-exists :config store-config}))
-          {:keys [eavt aevt avet temporal-eavt temporal-aevt temporal-avet schema rschema config max-tx op-count hash]}
+              (dt/raise "Database already exists." {:type :db-already-exists
+                                                    :config store-config}))
+          {:keys [eavt aevt avet
+                  temporal-eavt temporal-aevt temporal-avet
+                  schema rschema config max-tx op-count hash]}
           (db/empty-db nil config)
-          backend (kons/->KonserveBackend store)]
+          backend (kons/konserve-backend store (:crypto-hash? config))]
       (k/assoc-in store [:db]
                   (merge {:schema   schema
                           :max-tx max-tx

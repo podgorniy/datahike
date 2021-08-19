@@ -4,7 +4,7 @@
         io.replikativ/konserve                      {:git/url "https://github.com/replikativ/konserve.git"
                                                      :sha "5bfcbb84a153e003bd7e4c7724308fbe0a54da42"}
         io.replikativ/hitchhiker-tree               {:git/url "https://github.com/replikativ/hitchhiker-tree.git"
-                                                     :sha "4c6a00022378ad16b1e66d6d901260a5e42d8d91"}
+                                                     :sha "4aa7dc92bba9cfa30e23dc2b79047385a2e9ecc1"}
         persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.2"}
         org.clojure/tools.reader                    {:mvn/version "1.3.3"}
         environ/environ                             {:mvn/version "1.2.0"}
