@@ -99,6 +99,7 @@
                  {:sync? true})
     @report))
 
+
 (defn transact!
   [connection {:keys [tx-data]}]
   {:pre [(d/conn? connection)]}
