@@ -10,7 +10,6 @@
             [hitchhiker.tree.bootstrap.konserve :as kons]
             [konserve.core :as k]
             [konserve.cache :as kc]
-            [superv.async :refer [<?? S]]
             [taoensso.timbre :as log]
             [clojure.spec.alpha :as s]
             [clojure.core.async :refer [go <!]]
@@ -51,9 +50,10 @@
                                                      :ident-ref-map ident-ref-map
                                                      :store store))
                          _ (swap! conn assoc
-                                  :transactor (t/create-transactor (:transactor config)
+                                  :transactor #_(t/create-transactor (:transactor config)
                                                                    conn
-                                                                   update-and-flush-db))
+                                                                   update-and-flush-db)
+                                  (:transactor @connection))
 
                          {:keys [db-after] :as tx-report} @(update-fn conn tx-data)
                          {:keys [eavt aevt avet
@@ -97,13 +97,13 @@
                          :temporal-aevt-key temporal-aevt-flushed
                          :temporal-avet-key temporal-avet-flushed}))))
                  {:sync? true})
-
     @report))
 
 (defn transact!
   [connection {:keys [tx-data]}]
   {:pre [(d/conn? connection)]}
-  (let [p (throwable-promise)]
+  (update-and-flush-db connection tx-data datahike.core/transact)
+  #_(let [p (throwable-promise)]
     (go
       (let [tx-report (<! (t/send-transaction! (:transactor @connection) tx-data 'datahike.core/transact))]
         (deliver p tx-report)))
@@ -119,7 +119,7 @@
                               {:error :transact/syntax :argument arg-map}))
         _ (log/debug "Transacting with arguments: " arg)]
     (try
-      (deref (transact! connection arg))
+      (transact! connection arg)
       (catch Exception e
         (log/errorf "Error during transaction %s" (.getMessage e))
         (throw (.getCause e))))))
@@ -133,7 +133,7 @@
     p))
 
 (defn release [connection]
-  (<?? S (t/shutdown (:transactor @connection)))
+  (t/shutdown (:transactor @connection))
   (ds/release-store (get-in @connection [:config :store]) (:store @connection)))
 
 ;; deprecation begin
@@ -193,7 +193,8 @@
               (ds/release-store store-config store)
               (dt/raise "Database does not exist." {:type :db-does-not-exist
                                                     :config config}))
-          {:keys [eavt-key aevt-key avet-key temporal-eavt-key temporal-aevt-key temporal-avet-key schema rschema system-entities ref-ident-map ident-ref-map config max-tx op-count hash]
+          {:keys [eavt-key aevt-key avet-key temporal-eavt-key temporal-aevt-key temporal-avet-key
+                  schema rschema system-entities ref-ident-map ident-ref-map config max-tx op-count hash]
            :or {op-count 0}} stored-db
           empty (db/empty-db nil config)
           conn (d/conn-from-db (assoc empty

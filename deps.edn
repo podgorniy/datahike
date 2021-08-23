@@ -2,7 +2,7 @@
         org.clojure/clojurescript                   {:mvn/version "1.10.597"}
         org.clojure/tools.cli                       {:mvn/version "1.0.194"}
         io.replikativ/konserve                      {:git/url "https://github.com/replikativ/konserve.git"
-                                                     :sha "5bfcbb84a153e003bd7e4c7724308fbe0a54da42"}
+                                                     :sha "f25168bb5cdca1a2e9070011370183a8b89190f2"}
         io.replikativ/hitchhiker-tree               {:git/url "https://github.com/replikativ/hitchhiker-tree.git"
                                                      :sha "4aa7dc92bba9cfa30e23dc2b79047385a2e9ecc1"}
         persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.2"}
