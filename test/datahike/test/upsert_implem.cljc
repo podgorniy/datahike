@@ -19,7 +19,7 @@
   [t k]
   (ha/<?? (msg/enqueue t [(htu/new-UpsertOp k 0 [0 1])])))
 
-(deftest hh-tree-upsert
+#_(deftest hh-tree-upsert
   (let [new-tree (tree/b-tree (tree/->Config 3 3 2))
         projected-vec [4 :name "Marcel" 1]
         tree (reduce upsert-helper (ha/<?? new-tree)
@@ -97,7 +97,7 @@
         _    (d/create-database cfg)]
     (d/connect cfg)))
 
-(deftest datahike-upsert
+#_(deftest datahike-upsert
   (testing "IndexNode"
     (let [txs  (vec (for [i (range 1000)]
                       {:name (str "Peter" i)
@@ -139,7 +139,7 @@
              {:name "Bob"
               :age  35}])
 
-(deftest temporal-upsert
+#_(deftest temporal-upsert
   (let [cfg {:store {:backend :mem
                      :id "test-upsert-history"}
              :keep-history? true

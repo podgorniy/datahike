@@ -43,7 +43,7 @@
   (-compare [key1 key2]
     (compare-arrays key1 key2)))
 
-(def ^:const br 300) ;; TODO name better, total node size; maybe(!) make configurable
+(def ^:const br 64) ;; TODO name better, total node size; maybe(!) make configurable
 (def ^:const br-sqrt (long (Math/sqrt br))) ;; branching factor
 
 (defn- index-type->datom-fn [index-type]
