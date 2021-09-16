@@ -2,7 +2,8 @@
   (:require [datahike.api :as d]
             [datahike.db :as db]))
 
-(def ref-config {:store {:backend :mem :id "attr-refs-test"}
+(def ref-config {:store {:backend :mem
+                         :id "attr-refs-test.util"}
                  :attribute-refs? true
                  :keep-history? false
                  :schema-flexibility :write})
@@ -12,6 +13,9 @@
     :db/cardinality :db.cardinality/one
     :db/valueType   :db.type/string
     :db/unique      :db.unique/identity}
+   {:db/ident       :mname
+    :db/cardinality :db.cardinality/one
+    :db/valueType   :db.type/string}
    {:db/ident       :aka
     :db/cardinality :db.cardinality/many
     :db/valueType   :db.type/string}
@@ -61,7 +65,22 @@
    {:db/ident       :spec
     :db/valueType   :db.type/ref
     :db/isComponent true
-    :db/cardinality :db.cardinality/one}])
+    :db/cardinality :db.cardinality/one}
+   {:db/ident       :attr
+    :db/cardinality :db.cardinality/one
+    :db/valueType   :db.type/keyword}
+   {:db/ident       :follow
+    :db/cardinality :db.cardinality/many
+    :db/valueType   :db.type/ref}
+   {:db/ident       :value
+    :db/cardinality :db.cardinality/many
+    :db/valueType   :db.type/long}
+   {:db/ident       :f1
+    :db/cardinality :db.cardinality/one
+    :db/valueType   :db.type/ref}
+   {:db/ident       :f2
+    :db/cardinality :db.cardinality/one
+    :db/valueType   :db.type/ref}])
 
 (defn setup-new-connection []
   (d/delete-database ref-config)
@@ -92,3 +111,15 @@
                        (update entity :db/id (partial + offset))
                        entity))
         entities))
+
+(defn shift-in [coll-of-coll indices offset]
+  (into (empty coll-of-coll)
+        (map (fn [item] (reduce (fn [acc i] (update acc i + offset))
+                                item
+                                indices))
+             coll-of-coll)))
+
+(defn shift [coll offset]
+  (into (empty coll)
+        (map (partial + offset)
+             coll)))

@@ -54,7 +54,7 @@
     :db/valueType :db.type/instant
     :db/cardinality :db.cardinality/one
     :db/doc "A transaction's time-point"
-    :db/unique :db.unique/identity
+    :db/noHistory true
     :db/index true}
    {:db/id 10
     :db/ident :db.cardinality/many}
@@ -125,6 +125,7 @@
 
 (def ^:const non-ref-implicit-schema
   {:db/ident {:db/unique :db.unique/identity}
+   :db/txInstant {:db/noHistory true}
    :db.entity/attrs {:db/cardinality :db.cardinality/many}
    :db.entity/preds {:db/cardinality :db.cardinality/many}})
 
@@ -133,9 +134,15 @@
   (reduce
    (fn [m {:keys [db/ident] :as attr}]
      (when ident
-       (assoc m ident attr)))
+       (assoc m ident (dissoc attr :db/ident))))
    {}
    system-schema))
 
 (def ^:const ue0 (transduce (comp (map :db/id) (remove #{tx0})) max 0 system-schema))
 (def ^:const utx0 tx0)
+
+(def ^:const default-index-b-factor 17)
+(def ^:const default-index-data-node-size 300)
+(def ^:const default-index-log-size (- 300 17))
+
+(def ^:const default-konserve-cache-size 100)

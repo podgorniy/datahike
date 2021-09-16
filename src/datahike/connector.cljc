@@ -13,8 +13,9 @@
             [konserve.cache :as kc]
             [taoensso.timbre :as log]
             [clojure.spec.alpha :as s]
-            [clojure.core.async :refer [go <! <!!]]
-            [clojure.core.cache :as cache])
+            [clojure.core.async :refer [go <!]]
+            [clojure.core.cache :as cache]
+            [superv.async :refer [throw-if-exception-]])
   (:import [java.net URI]))
 
 (s/def ::connection #(instance? clojure.lang.Atom %))
@@ -25,7 +26,7 @@
     (k/update-in store [:db]
                  (fn [stored-db]
                    (let [;; reconnect
-                         config (:config @connection) ;; keep our config
+                         {:keys [config transactor]} @connection ;; keep those
                          {:keys [eavt-key aevt-key avet-key
                                  temporal-eavt-key temporal-aevt-key temporal-avet-key
                                  system-entities ident-ref-map ref-ident-map
@@ -49,14 +50,10 @@
                                                      :system-entities system-entities
                                                      :ref-ident-map ref-ident-map
                                                      :ident-ref-map ident-ref-map
-                                                     :store store))
-                         _ (swap! conn assoc
-                                  :transactor #_(t/create-transactor (:transactor config)
-                                                                   conn
-                                                                   update-and-flush-db)
-                                  (:transactor @connection))
+                                                     :store store
+                                                     :transactor transactor))
 
-                         {:keys [db-after] :as tx-report} @(update-fn conn tx-data)
+                         {:keys [db-after] :as tx-report} (throw-if-exception- @(update-fn conn tx-data))
                          {:keys [eavt aevt avet
                                  temporal-eavt temporal-aevt temporal-avet
                                  system-entities ref-ident-map ident-ref-map
@@ -73,13 +70,14 @@
                                                  (di/-flush temporal-aevt backend))
                          temporal-avet-flushed (when keep-history?
                                                  (di/-flush temporal-avet backend))]
-                     (reset! connection (assoc db-after
-                                               :eavt eavt-flushed
-                                               :aevt aevt-flushed
-                                               :avet avet-flushed
-                                               :temporal-eavt temporal-eavt-flushed
-                                               :temporal-aevt temporal-aevt-flushed
-                                               :temporal-avet temporal-avet-flushed))
+                     (reset! connection (merge db-after
+                                               {:eavt eavt-flushed
+                                                :aevt aevt-flushed
+                                                :avet avet-flushed}
+                                               (when keep-history?
+                                                 {:temporal-eavt-key temporal-eavt-flushed
+                                                  :temporal-aevt-key temporal-aevt-flushed
+                                                  :temporal-avet-key temporal-avet-flushed})))
                      (merge
                       {:schema   schema
                        :rschema  rschema
@@ -98,14 +96,13 @@
                          :temporal-aevt-key temporal-aevt-flushed
                          :temporal-avet-key temporal-avet-flushed}))))
                  {:sync? true})
-    @report))
+    (throw-if-exception- @report)))
 
 
 (defn transact!
   [connection {:keys [tx-data]}]
   {:pre [(d/conn? connection)]}
-  (update-and-flush-db connection tx-data datahike.core/transact)
-  #_(let [p (throwable-promise)]
+  (let [p (throwable-promise)]
     (go
       (let [tx-report (<! (t/send-transaction! (:transactor @connection) tx-data 'datahike.core/transact))]
         (deliver p tx-report)))
@@ -121,10 +118,10 @@
                               {:error :transact/syntax :argument arg-map}))
         _ (log/debug "Transacting with arguments: " arg)]
     (try
-      (transact! connection arg)
+      @(transact! connection arg)
       (catch Exception e
-        (log/errorf "Error during transaction %s" (.getMessage e))
-        (throw (.getCause e))))))
+        (prn "Error during transaction %s" (.getMessage e))
+        (throw (ex-cause (ex-cause e)))))))
 
 (defn load-entities [connection entities]
   (let [p (throwable-promise)]
@@ -144,6 +141,13 @@
   (-create-database [config opts])
   (-delete-database [config])
   (-database-exists? [config]))
+
+(defn- wrap-cache [store config]
+  (let [{:keys [cache-size]} config]
+    (log/trace "Adding cache of size " cache-size " to " store " with " config)
+    (kc/ensure-cache
+     store
+     (atom (cache/lru-cache-factory {} :threshold cache-size)))))
 
 (extend-protocol IConfiguration
   String
@@ -168,9 +172,7 @@
         (let [store (ups/add-upsert-handler
                      (ins/add-insert-handler
                       (kons/add-hitchhiker-tree-handlers
-                       (kc/ensure-cache
-                        raw-store
-                        (atom (cache/lru-cache-factory {} :threshold 1000))))))
+                       raw-store)))
               stored-db (k/get-in store [:db] nil {:sync? true})]
           (ds/release-store store-config store)
           (not (nil? stored-db)))
@@ -189,9 +191,7 @@
           store (ups/add-upsert-handler
                  (ins/add-insert-handler
                   (kons/add-hitchhiker-tree-handlers
-                   (kc/ensure-cache
-                    raw-store
-                    (atom (cache/lru-cache-factory {} :threshold 1000))))))
+                   (wrap-cache raw-store store-config))))
           stored-db (k/get-in store [:db] nil {:sync? true})
           _ (when-not stored-db
               (ds/release-store store-config store)
@@ -227,9 +227,7 @@
     (let [{:keys [keep-history? initial-tx] :as config}
           (dc/load-config config deprecated-config)
           store-config (:store config)
-          store (kc/ensure-cache
-                 (ds/empty-store store-config)
-                 (atom (cache/lru-cache-factory {} :threshold 1000)))
+          store (wrap-cache (ds/empty-store store-config) store-config)
           stored-db (k/get-in store [:db] nil {:sync? true})
           _ (when stored-db
               (dt/raise "Database already exists." {:type :db-already-exists

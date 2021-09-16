@@ -43,9 +43,6 @@
   (-compare [key1 key2]
     (compare-arrays key1 key2)))
 
-(def ^:const br 64) ;; TODO name better, total node size; maybe(!) make configurable
-(def ^:const br-sqrt (long (Math/sqrt br))) ;; branching factor
-
 (defn- index-type->datom-fn [index-type]
   (case index-type
     :aevt (fn [a e v tx] (dd/datom e a v tx true))
@@ -117,11 +114,6 @@
      (first %))
    (hmsg/lookup-fwd-iter tree [])))
 
-(defn empty-tree
-  "Create empty hichthiker tree"
-  []
-  (async/<?? (tree/b-tree (tree/->Config br-sqrt br (- br br-sqrt)))))
-
 (defn- datom->node [^Datom datom index-type]
   (case index-type
     :aevt [(.-a datom) (.-e datom) (.-v datom) (.-tx datom)]
@@ -156,16 +148,6 @@
     (async/<?? (hmsg/enqueue tree [(assoc (ups/new-temporal-UpsertOp datom-as-vec op-count (index-type->indices index-type))
                                           :tag (h/uuid))]))))
 
-(defn init-tree
-  "Create tree with datoms"
-  [datoms index-type op-count]
-  (async/<??
-   (async/reduce<
-    (fn [tree [idx datom]]
-      (-insert tree datom index-type (+ idx op-count)))
-    (empty-tree)
-    (map-indexed (fn [idx datom] [idx datom]) (seq datoms)))))
-
 (defn -remove [tree ^Datom datom index-type op-count]
   (async/<?? (hmsg/delete tree (datom->node datom index-type) op-count)))
 
@@ -175,3 +157,22 @@
 (def -persistent! identity)
 
 (def -transient identity)
+
+
+;; Functions used in multimethods defined in index.cljc
+
+
+(defn empty-tree
+  "Create empty hitchhiker tree"
+  [b-factor data-node-size log-size]
+  (async/<?? (tree/b-tree (tree/->Config b-factor data-node-size log-size))))
+
+(defn init-tree
+  "Create tree with datoms"
+  [datoms index-type op-count b-factor data-node-size log-size]
+  (async/<??
+   (async/reduce<
+    (fn [tree [idx datom]]
+      (-insert tree datom index-type (+ idx op-count)))
+    (empty-tree b-factor data-node-size log-size)
+    (map-indexed (fn [idx datom] [idx datom]) (seq datoms)))))

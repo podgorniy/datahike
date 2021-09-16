@@ -148,7 +148,7 @@
 ;; ----------------------------------------------------------------------------
 
 
-(declare hash-datoms equiv-db empty-db resolve-datom validate-attr validate-attr-ident components->pattern indexing? search-current-indices search-temporal-indices)
+(declare hash-datoms equiv-db empty-db resolve-datom validate-attr validate-attr-ident components->pattern indexing? no-history? multival? search-current-indices search-temporal-indices)
 #?(:cljs (declare pr-db))
 
 (defn db-transient [db]
@@ -367,25 +367,36 @@
   (-index-range [db attr start end]
                 (filter (.-pred db) (-index-range (.-unfiltered-db db) attr start end))))
 
+(defn distinct-datoms [db current-datoms history-datoms]
+  (if  (-keep-history? db)
+    (concat (filter #(or (no-history? db (:a %))
+                         (multival? db (:a %)))
+                    current-datoms)
+            history-datoms)
+    current-datoms))
+
 (defn temporal-search [^DB db pattern]
-  (concat (search-current-indices db pattern)
-          (search-temporal-indices db pattern)))
+  (distinct-datoms db
+                   (search-current-indices db pattern)
+                   (search-temporal-indices db pattern)))
 
 (defn temporal-datoms [^DB db index-type cs]
   (let [index (get db index-type)
         temporal-index (get db (keyword (str "temporal-" (name index-type))))
         from (components->pattern db index-type cs e0 tx0)
         to (components->pattern db index-type cs emax txmax)]
-    (concat (-slice index from to index-type)
-            (-slice temporal-index from to index-type))))
+    (distinct-datoms db
+                     (-slice index from to index-type)
+                     (-slice temporal-index from to index-type))))
 
 (defn temporal-seek-datoms [^DB db index-type cs]
   (let [index (get db index-type)
         temporal-index (get db (keyword (str "temporal-" (name index-type))))
         from (components->pattern db index-type cs e0 tx0)
         to (datom emax nil nil txmax)]
-    (concat (-slice index from to index-type)
-            (-slice temporal-index from to index-type))))
+    (distinct-datoms db
+                     (-slice index from to index-type)
+                     (-slice temporal-index from to index-type))))
 
 (defn temporal-rseek-datoms [^DB db index-type cs]
   (let [index (get db index-type)
@@ -393,8 +404,9 @@
         from (components->pattern db index-type cs e0 tx0)
         to (datom emax nil nil txmax)]
     (concat
-     (-> (concat (-slice index from to index-type)
-                 (-slice temporal-index from to index-type))
+     (-> (distinct-datoms db
+                          (-slice index from to index-type)
+                          (-slice temporal-index from to index-type))
          vec
          rseq))))
 
@@ -404,9 +416,9 @@
   (validate-attr attr (list '-index-range 'db attr start end) db)
   (let [from (resolve-datom current-db nil attr start nil e0 tx0)
         to (resolve-datom current-db nil attr end nil emax txmax)]
-    (concat
-     (-slice (get db :avet) from to :avet)
-     (-slice (get db :temporal-avet) from to :avet))))
+    (distinct-datoms db
+                     (-slice (get db :avet) from to :avet)
+                     (-slice (get db :temporal-avet) from to :avet))))
 
 (defrecord-updatable HistoricalDB [origin-db]
   #?@(:cljs
@@ -829,9 +841,6 @@
     (validate-schema-key a-ident :db/cardinality (:db/cardinality kv) #{:db.cardinality/one :db.cardinality/many})
     (validate-tuple-schema a-ident kv)))
 
-(def ^:const br 300)
-(def ^:const br-sqrt (long (Math/sqrt br)))
-
 (defn to-old-schema [new-schema]
   (if (or (vector? new-schema) (seq? new-schema))
     (reduce
@@ -853,7 +862,7 @@
        (apply max)))
 
 (defn init-max-eid [eavt]
-  ;; solved with reserse slice first in datascript
+  ;; solved with reverse slice first in datascript
   (if-let [datoms (-slice
                    eavt
                    (datom e0 nil nil tx0)
@@ -899,9 +908,9 @@
   "Prefer create-database in api, schema only in index for attribute reference database."
   ([] (empty-db nil nil))
   ([schema] (empty-db schema nil))
-  ([schema config]
+  ([schema user-config]
    {:pre [(or (nil? schema) (map? schema) (coll? schema))]}
-   (let [complete-config (merge (dc/storeless-config) config)
+   (let [complete-config (merge (dc/storeless-config) user-config)
          _ (dc/validate-config complete-config)
          {:keys [keep-history? index schema-flexibility attribute-refs?]} complete-config
          on-read? (= :read schema-flexibility)
@@ -920,16 +929,18 @@
          indexed (if attribute-refs?
                    (set (map ident-ref-map (:db/index rschema)))
                    (:db/index rschema))
+         index-config (merge (:index-config complete-config)
+                             {:indexed indexed})
          eavt (if attribute-refs?
-                (di/init-index index ref-datoms indexed :eavt 0)
-                (di/empty-index index :eavt))
+                (di/init-index index ref-datoms :eavt 0 index-config)
+                (di/empty-index index :eavt index-config))
          aevt (if attribute-refs?
-                (di/init-index index ref-datoms indexed :aevt 0)
-                (di/empty-index index :aevt))
+                (di/init-index index ref-datoms :aevt 0 index-config)
+                (di/empty-index index :aevt index-config))
          indexed-datoms (filter (fn [[_ a _ _]] (contains? indexed a)) ref-datoms)
          avet (if attribute-refs?
-                (di/init-index index indexed-datoms indexed :avet 0)
-                (di/empty-index index :avet))
+                (di/init-index index indexed-datoms :avet 0 index-config)
+                (di/empty-index index :avet index-config))
          max-eid (if attribute-refs? ue0 e0)
          max-tx (if attribute-refs? utx0 tx0)]
      (map->DB
@@ -948,9 +959,9 @@
         :ident-ref-map ident-ref-map
         :op-count (if attribute-refs? (count ref-datoms) 0)}
        (when keep-history?                                  ;; no difference for attribute references since no update possible
-         {:temporal-eavt (di/empty-index index :eavt)
-          :temporal-aevt (di/empty-index index :aevt)
-          :temporal-avet (di/empty-index index :avet)}))))))
+         {:temporal-eavt (di/empty-index index :eavt index-config)
+          :temporal-aevt (di/empty-index index :aevt index-config)
+          :temporal-avet (di/empty-index index :avet index-config)}))))))
 
 (defn advance-all-datoms [datoms offset]
   (map
@@ -964,9 +975,9 @@
 (defn ^DB init-db
   ([datoms] (init-db datoms nil nil))
   ([datoms schema] (init-db datoms schema nil))
-  ([datoms schema config]
+  ([datoms schema user-config]
    (validate-schema schema)
-   (let [{:keys [index schema-flexibility keep-history? attribute-refs?] :as complete-config}  (merge (dc/storeless-config) config)
+   (let [{:keys [index schema-flexibility keep-history? attribute-refs?] :as complete-config}  (merge (dc/storeless-config) user-config)
          _ (dc/validate-config complete-config)
          complete-schema (merge schema
                                 (if attribute-refs?
@@ -976,16 +987,18 @@
          ident-ref-map (if attribute-refs? (get-ident-ref-map schema) {})
          ref-ident-map (if attribute-refs? (clojure.set/map-invert ident-ref-map) {})
          system-entities (if attribute-refs? c/system-entities #{})
+
          indexed (if attribute-refs?
                    (set (map ident-ref-map (:db/index rschema)))
                    (:db/index rschema))
-
          new-datoms (if attribute-refs? (concat ref-datoms datoms) datoms)
          indexed-datoms (filter (fn [[_ a _ _]] (contains? indexed a)) new-datoms)
          op-count 0
-         avet (di/init-index index indexed-datoms indexed :avet op-count)
-         eavt (di/init-index index new-datoms indexed :eavt op-count)
-         aevt (di/init-index index new-datoms indexed :aevt op-count)
+         index-config (assoc (:index-config complete-config)
+                             :indexed indexed)
+         avet (di/init-index index indexed-datoms :avet op-count index-config)
+         eavt (di/init-index index new-datoms :eavt op-count index-config)
+         aevt (di/init-index index new-datoms :aevt op-count index-config)
          max-eid (init-max-eid eavt)
          max-tx (get-max-tx eavt)
          op-count (count new-datoms)]
@@ -1003,9 +1016,9 @@
                       :ref-ident-map ref-ident-map
                       :ident-ref-map ident-ref-map}
                      (when keep-history?
-                       {:temporal-eavt (di/empty-index index :eavt)
-                        :temporal-aevt (di/empty-index index :aevt)
-                        :temporal-avet (di/empty-index index :avet)}))))))
+                       {:temporal-eavt (di/empty-index index :eavt index-config)
+                        :temporal-aevt (di/empty-index index :aevt index-config)
+                        :temporal-avet (di/empty-index index :avet index-config)}))))))
 
 (defn- equiv-db-index [x y]
   (loop [xs (seq x)
@@ -1453,6 +1466,7 @@
         schema? (-> (update-schema datom)
                     update-rschema)
         true (update :op-count inc))
+
       (if-some [removing ^Datom (first (-search db [(.-e datom) (.-a datom) (.-v datom)]))]
         (cond-> db
           true (update-in [:eavt] #(di/-remove % removing :eavt op-count))
@@ -1506,22 +1520,6 @@
      (queue-tuple queue tuple idx db e v))
    queue
    tuples))
-
-(defn- transact-report [report datom]
-  (let [db      (:db-after report)
-        a       (:a datom)
-        report' (-> report
-                    (update-in [:db-after] with-datom datom)
-                    (update-in [:tx-data] conj datom))]
-    (if (tuple-source? db a)
-      (let [e      (:e datom)
-            v      (if (datom-added datom) (:v datom) nil)
-            queue  (or (-> report' ::queued-tuples (get e)) {})
-            tuples (get (-attrs-by db :db/attrTuples) a)
-            queue' (queue-tuples queue tuples db e v)]
-        (update report' ::queued-tuples assoc e queue'))
-      report')))
-
 (defn validate-datom-upsert [db ^Datom datom]
   (when (is-attr? db (.-a datom) :db/unique)
     (when-let [old (first (-datoms db :avet [(.-a datom) (.-v datom)]))]
@@ -1560,20 +1558,23 @@
       true    (update :hash + (hash datom))
       schema? (-> (update-schema datom) update-rschema))))
 
-(defn- transact-report-upsert [report datom]
-  (let [db      (:db-after report)
-        a       (:a datom)
-        report' (-> report
-                    (update-in [:db-after] with-datom-upsert datom)
-                    (update-in [:tx-data] conj datom))]
-    (if (tuple-source? db a)
-      (let [e      (:e datom)
-            v      (if (datom-added datom) (:v datom) nil)
-            queue  (or (-> report' ::queued-tuples (get e)) {})
-            tuples (get (-attrs-by db :db/attrTuples) a)
-            queue' (queue-tuples queue tuples db e v)]
-        (update report' ::queued-tuples assoc e queue'))
-      report')))
+(defn- transact-report
+  ([report datom] (transact-report report datom false))
+  ([report datom upsert?]
+   (let [db      (:db-after report)
+         a       (:a datom)
+         update-fn (if upsert? with-datom-upsert with-datom)
+         report' (-> report
+                     (update-in [:db-after] update-fn datom)
+                     (update-in [:tx-data] conj datom))]
+     (if (tuple-source? db a)
+       (let [e      (:e datom)
+             v      (if (datom-added datom) (:v datom) nil)
+             queue  (or (-> report' ::queued-tuples (get e)) {})
+             tuples (get (-attrs-by db :db/attrTuples) a)
+             queue' (queue-tuples queue tuples db e v)]
+         (update report' ::queued-tuples assoc e queue'))
+       report'))))
 
 (defn- check-upsert-conflict [entity acc]
   (let [[e a v] acc
@@ -1686,10 +1687,9 @@
         e (entid-strict db e)
         a-ident (if attribute-refs? (-ident-for db a) a)
         v (if (ref? db a-ident) (entid-strict db v) v)
-        new-datom (datom e a v tx)]
-    (if (multival? db a)
-      (transact-report report new-datom)
-      (transact-report-upsert report new-datom))))
+        new-datom (datom e a v tx)
+        upsert? (not (multival? db a))]
+    (transact-report report new-datom upsert?)))
 
 (defn- transact-retract-datom [report ^Datom d]
   (transact-report report (datom (.-e d) (.-a d) (.-v d) (current-tx report) false)))

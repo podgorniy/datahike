@@ -1,6 +1,6 @@
 (ns datahike.transactor
   (:require [datahike.core :as d]
-            [superv.async :refer [<?- S go-loop-super]]
+            [superv.async :refer [go-try- <?- S go-loop-super]]
             [taoensso.timbre :as log]
             [clojure.core.async :refer [>! chan close! promise-chan put! go]]))
 
@@ -14,7 +14,7 @@
            [rx-queue rx-thread]
   PTransactor
   (send-transaction! [_ tx-data tx-fn]
-    (go
+    (go-try-
       (let [p (promise-chan)]
         (>! rx-queue {:tx-data tx-data :callback p :tx-fn tx-fn})
         (<?- p))))
@@ -33,7 +33,9 @@
                 tx-report (try (update-and-flush-db connection tx-data update-fn)
                                  ; Only catch ExceptionInfo here (intentionally rejected transactions).
                                  ; Any other exceptions should crash the transactor and signal the supervisor.
-                               (catch clojure.lang.ExceptionInfo e e))]
+                               (catch Exception e
+                                 (log/trace "Exception in transactor: " e)
+                                 e))]
             (when (some? callback)
               (put! callback tx-report)))
           (recur))

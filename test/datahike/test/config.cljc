@@ -3,6 +3,7 @@
    #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer [is are deftest testing use-fixtures]])
    [datahike.config :as c]
+   [datahike.constants :as const]
    [datahike.test.core]
    [datahike.core :as d]))
 
@@ -43,26 +44,37 @@
                          :keep-history? true
                          :initial-tx nil
                          :index :datahike.index/hitchhiker-tree
+                         :index-config {:index-b-factor       const/default-index-b-factor
+                                        :index-log-size       const/default-index-log-size
+                                        :index-data-node-size const/default-index-data-node-size}
                          :schema-flexibility :write
-                         :cache-size 100000}]
+                         :cache-size 100000
+                         :crypto-hash? true}]
     (is (= (merge default-new-cfg
-                  {:store {:backend :mem :id "deprecated-test"}})
+                  {:store {:backend :mem :id "deprecated-test"
+                           :cache-size const/default-konserve-cache-size}})
            (c/from-deprecated mem-cfg)))
     (is (= (merge default-new-cfg
                   {:store {:backend :file
-                           :path "/deprecated/test"}})
+                           :path "/deprecated/test"
+                           :cache-size const/default-konserve-cache-size}})
            (c/from-deprecated file-cfg)))))
 
 (deftest load-config-test
   (testing "configuration defaults"
     (let [config (c/load-config)]
       (is (= {:store {:backend :mem
-                      :id "default"}
+                      :id "default"
+                      :cache-size const/default-konserve-cache-size}
               :attribute-refs? false
               :keep-history? true
               :schema-flexibility :write
               :index :datahike.index/hitchhiker-tree
-              :cache-size 100000}
+              :index-config       {:index-b-factor       const/default-index-b-factor
+                                   :index-log-size       const/default-index-log-size
+                                   :index-data-node-size const/default-index-data-node-size}
+              :cache-size 100000
+              :crypto-hash? true}
              (-> config (dissoc :name)))))))
 
 (deftest core-config-test
@@ -84,4 +96,3 @@
                                     {:schema-flexibility :write})
                         (d/db-with  [{:name "Alice"}]))]
              (d/q '[:find ?n :where [_ :name ?n]] db))))))
-

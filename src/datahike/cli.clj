@@ -126,9 +126,16 @@
 (defn -main [& args]
   (let [{:keys [action options arguments exit-message ok?]}
         (validate-args args)]
-    (if (pos? (:verbosity options))
+    (case (:verbosity options)
+      0 ;; default
+      (log/set-level! :warn)
+      1
+      (log/set-level! :info)
+      2
       (log/set-level! :debug)
-      (log/set-level! :warn))
+      3
+      (log/set-level! :trace)
+      (exit 1 (str "Verbosity level not supported: " (:verbosity options))))
 
     (if exit-message
       (exit (if ok? 0 1) exit-message)

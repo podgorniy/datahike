@@ -3,7 +3,10 @@
             [clojure.spec.alpha :as s]
             [zufall.core :as z]
             [environ.core :refer [env]]
-            [datahike.store :as ds])
+            [taoensso.timbre :as log]
+            [datahike.store :as ds]
+            [datahike.constants :as c]
+            [datahike.constants :as dc])
   (:import [java.net URI]))
 
 (s/def ::index #{:datahike.index/hitchhiker-tree :datahike.index/persistent-set})
@@ -15,10 +18,16 @@
 (s/def ::name string?)
 (s/def ::crypto-hash? boolean?)
 
+(s/def ::index-config map?)
+(s/def ::index-b-factor long)
+(s/def ::index-log-size long)
+(s/def ::index-data-node-size long)
+
 (s/def ::store map?)
 
 (s/def :datahike/config (s/keys :req-un [:datahike/store]
                                 :opt-un [::index
+                                         ::index-config
                                          ::keep-history?
                                          ::schema-flexibility
                                          ::attribute-refs?
@@ -38,7 +47,8 @@
       :or {schema-on-read false
            index :datahike.index/hitchhiker-tree
            temporal-index true}}]
-  {:store (merge {:backend backend}
+  {:store (merge {:backend backend
+                  :cache-size dc/default-konserve-cache-size}
                  (case backend
                    :mem {:id (or host path)}
                    :pg {:username username
@@ -50,6 +60,9 @@
                    :level {:path path}
                    :file {:path path}))
    :index index
+   :index-config {:index-b-factor       c/default-index-b-factor
+                  :index-log-size       c/default-index-log-size
+                  :index-data-node-size c/default-index-data-node-size}
    :keep-history? temporal-index
    :attribute-refs? false
    :initial-tx initial-tx
@@ -103,7 +116,10 @@
    :attribute-refs? false
    :index :datahike.index/hitchhiker-tree
    :cache-size 100000
-   :crypto-hash? true})
+   :crypto-hash? true
+   :index-config {:index-b-factor       c/default-index-b-factor
+                  :index-log-size       c/default-index-log-size
+                  :index-data-node-size c/default-index-data-node-size}})
 
 (defn remove-nils
   "Thanks to https://stackoverflow.com/a/34221816"
@@ -126,7 +142,8 @@
                          (apply from-deprecated config-as-arg (first opts))
                          config-as-arg)
          store-config (ds/default-config (merge
-                                          {:backend (keyword (:datahike-store-backend env :mem))}
+                                          {:backend (keyword (:datahike-store-backend env :mem))
+                                           :cache-size dc/default-konserve-cache-size}
                                           (:store config-as-arg)))
          config {:store store-config
                  :initial-tx (:datahike-intial-tx env)
@@ -136,9 +153,12 @@
                  :schema-flexibility (keyword (:datahike-schema-flexibility env :write))
                  :index (keyword "datahike.index" (:datahike-index env "hitchhiker-tree"))
                  :cache-size (:cache-size env 100000)
-                 :crypto-hash? (bool-from-env :datahike-crypto-hash true)}
+                 :crypto-hash? (bool-from-env :datahike-crypto-hash true)
+                 :index-config {:index-b-factor       (int-from-env :datahike-b-factor c/default-index-b-factor)
+                                :index-log-size       (int-from-env :datahike-log-size c/default-index-log-size)
+                                :index-data-node-size (int-from-env :datahike-data-node-size c/default-index-data-node-size)}}
          merged-config ((comp remove-nils deep-merge) config config-as-arg)
-         {:keys [keep-history? name schema-flexibility index initial-tx store attribute-refs?]} merged-config
+         {:keys [schema-flexibility initial-tx store attribute-refs?]} merged-config
          config-spec (ds/config-spec store)]
      (when config-spec
        (when-not (s/valid? config-spec store)

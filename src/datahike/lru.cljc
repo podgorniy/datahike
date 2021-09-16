@@ -94,11 +94,12 @@
                           [cache lru counts new-size])
               [c l n s] (loop [c c l l n n s s]
                           (if (> s datom-limit)
-                            (let [k (first (peek lru))]
+                            (if-let [k (first (peek lru))]
                               (recur (dissoc c k)
                                      (dissoc l k)
                                      (dissoc n k)
-                                     (- s (get n k))))
+                                     (- s (get n k)))
+                              [c l n s])
                             [c l n s]))]
           (LRUDatomCache. (assoc c item result)
                           (assoc l item tick+)
@@ -111,8 +112,8 @@
            (LRUDatomCache. (dissoc cache key)
                            (dissoc lru key)
                            (dissoc counts key)
-                           (inc tick)
                            (- n-total-datoms (get counts key))
+                           (inc tick)
                            datom-limit)
            this))
   (seed [_ base]
