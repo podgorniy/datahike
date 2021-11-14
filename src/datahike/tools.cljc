@@ -21,7 +21,7 @@
    (defmacro case-tree [qs vs]
      (-case-tree qs vs)))
 
-(defn get-time []
+(defn ^:dynamic get-time []
   #?(:clj (java.util.Date.)
      :cljs (js/Date.)))
 

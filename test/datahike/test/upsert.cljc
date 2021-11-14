@@ -266,21 +266,21 @@
                                                 (take inactive-count)
                                                 (map (fn [eid]
                                                        [:db/add eid :ent/active? false])))}))]
-      #_(testing "File upsert"
-        (init-data file-conn)
-        (let [cached-db @file-conn
-              fresh-db @(api/connect file-cfg)
-              actual-count (- initial-active-count inactive-count)
-              cached-count (active-count cached-db)
-              fresh-count (active-count fresh-db)]
-          (is (= actual-count cached-count))
-          (is (= cached-count fresh-count))))
-      #_(testing "Mem upsert"
-        (init-data mem-conn)
-        (let [cached-db @mem-conn
-              fresh-db @(api/connect mem-cfg)
-              actual-count (- initial-active-count inactive-count)
-              cached-count (active-count cached-db)
-              fresh-count (active-count fresh-db)]
-          (is (= actual-count cached-count))
-          (is (= cached-count fresh-count)))))))
+      (testing "File upsert"
+          (init-data file-conn)
+          (let [cached-db @file-conn
+                fresh-db @(api/connect file-cfg)
+                actual-count (- initial-active-count inactive-count)
+                cached-count (active-count cached-db)
+                fresh-count (active-count fresh-db)]
+            (is (= actual-count cached-count))
+            (is (= cached-count fresh-count))))
+      (testing "Mem upsert"
+          (init-data mem-conn)
+          (let [cached-db @mem-conn
+                fresh-db @(api/connect mem-cfg)
+                actual-count (- initial-active-count inactive-count)
+                cached-count (active-count cached-db)
+                fresh-count (active-count fresh-db)]
+            (is (= actual-count cached-count))
+            (is (= cached-count fresh-count)))))))
