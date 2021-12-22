@@ -122,7 +122,7 @@
     (try
       @(transact! connection arg)
       (catch Exception e
-        (prn "Error during transaction %s" (.getMessage e))
+        (log/errorf "Error during transaction %s" (.getMessage e))
         (throw (ex-cause (ex-cause e)))))))
 
 (defn load-entities [connection entities]

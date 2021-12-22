@@ -3,9 +3,9 @@
         org.clojure/tools.cli                       {:mvn/version "1.0.194"}
         io.replikativ/konserve                      {:git/url "https://github.com/replikativ/konserve.git"
                                                      :sha "bd2579ca13f585d0752f2a1b764c351729b8ae47"}
-        io.replikativ/hitchhiker-tree               {:mvn/version "0.1.11"
-                                                     ;; :git/url "https://github.com/replikativ/hitchhiker-tree.git"
-                                                     ;; :sha "c1af8db8ac4ebbcbd9517b8de945ac8aab9bca76"
+        io.replikativ/hitchhiker-tree               {;; :mvn/version "0.1.11"
+                                                     :git/url "https://github.com/replikativ/hitchhiker-tree.git"
+                                                     :sha "c1af8db8ac4ebbcbd9517b8de945ac8aab9bca76"
                                                      }
         persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.4"}
         org.clojure/tools.reader                    {:mvn/version "1.3.6"}
@@ -77,13 +77,12 @@
                           babashka/fs {:mvn/version "0.1.2"}
                           cheshire/cheshire {:mvn/version "5.10.1"}}
                    :ns-default build}
-           :native-image
-           {:main-opts ["-m" "clj.native-image" "datahike.cli"
-                        "--initialize-at-build-time"
-                        ;; optional native image name override
-                        "-H:Name=datahike"]
-            :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
-            :extra-deps
-            {clj.native-image/clj.native-image
-             {:git/url "https://github.com/taylorwood/clj.native-image.git"
-              :sha "7708e7fd4572459c81f6a6b8e44c96f41cdd92d4"}}}}}
+           :native-image {:main-opts ["-m" "clj.native-image" "datahike.cli"
+                                      "--initialize-at-build-time"
+                                      ;; optional native image name override
+                                      "-H:Name=datahike"]
+                          :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
+                          :extra-deps
+                          {clj.native-image/clj.native-image
+                           {:git/url "https://github.com/taylorwood/clj.native-image.git"
+                            :sha "7708e7fd4572459c81f6a6b8e44c96f41cdd92d4"}}}}}

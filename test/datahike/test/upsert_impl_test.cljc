@@ -2,7 +2,7 @@
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
       :clj  [clojure.test :as t :refer        [is deftest testing]])
-   [hitchhiker.tree.utils.async :as ha]
+   [hitchhiker.tree.utils.clojure.async :as ha]
    [hitchhiker.tree :as tree]
    [hitchhiker.tree.messaging :as msg]
    [datahike.index.hitchhiker-tree.upsert :as htu]
