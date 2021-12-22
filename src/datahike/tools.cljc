@@ -1,7 +1,9 @@
 (ns ^:no-doc datahike.tools
   (:require
    [superv.async :refer [throw-if-exception-]]
-   [taoensso.timbre :as log]))
+   #?(:clj [clojure.java.io :as io])
+   [taoensso.timbre :as log])
+  #?(:clj (:import [java.util Properties UUID Date])))
 
 (defn combine-hashes [x y]
   #?(:clj  (clojure.lang.Util/hashCombine x y)
@@ -75,3 +77,48 @@
           (.countDown d)
           this)))))
 
+(defn get-version
+  "Retrieves the current version of a dependency. Thanks to https://stackoverflow.com/a/33070806/10978897"
+  [dep]
+  #?(:clj
+     (let [path (str "META-INF/maven/" (or (namespace dep) (name dep))
+                     "/" (name dep) "/pom.properties")
+           props (io/resource path)]
+       (when props
+         (with-open [stream (io/input-stream props)]
+           (let [props (doto (Properties.) (.load stream))]
+             (.getProperty props "version")))))
+     :cljs
+     "JavaScript"))
+
+(defn meta-data []
+  {:datahike/version (or (get-version 'io.replikativ/datahike) "DEVELOPMENT")
+   :konserve/version (get-version 'io.replikativ/konserve)
+   :hitchhiker.tree/version (get-version 'io.replikativ/hitchhiker-tree)
+   :datahike/id (UUID/randomUUID)
+   :datahike/created-at (Date.)})
+
+(defn deep-merge
+  "Recursively merges maps together. If all the maps supplied have nested maps
+  under the same keys, these nested maps are merged. Otherwise the value is
+  overwritten, as in `clojure.core/merge`.
+
+  Copied from weavejester/medley 1.3.0"
+  {:arglists '([& maps])
+   :added    "1.1.0"}
+  ([])
+  ([a] a)
+  ([a b]
+   (when (or a b)
+     (letfn [(merge-entry [m e]
+               (let [k  (key e)
+                     v' (val e)]
+                 (if (contains? m k)
+                   (assoc m k (let [v (get m k)]
+                                (if (and (map? v) (map? v'))
+                                  (deep-merge v v')
+                                  v')))
+                   (assoc m k v'))))]
+       (reduce merge-entry (or a {}) (seq b)))))
+  ([a b & more]
+   (reduce deep-merge (or a {}) (cons b more))))

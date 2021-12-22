@@ -30,7 +30,7 @@
                          {:keys [eavt-key aevt-key avet-key
                                  temporal-eavt-key temporal-aevt-key temporal-avet-key
                                  system-entities ident-ref-map ref-ident-map
-                                 schema rschema max-tx op-count hash]
+                                 schema rschema max-tx max-eid op-count hash meta]
                           :or {op-count 0}} stored-db
                          empty (db/empty-db nil)
                          conn (d/conn-from-db (assoc empty
@@ -38,7 +38,7 @@
                                                      :config config
                                                      :schema schema
                                                      :hash hash
-                                                     :max-eid (db/init-max-eid eavt-key)
+                                                     :max-eid max-eid
                                                      :op-count op-count
                                                      :eavt eavt-key
                                                      :aevt aevt-key
@@ -47,6 +47,7 @@
                                                      :temporal-aevt temporal-aevt-key
                                                      :temporal-avet temporal-avet-key
                                                      :rschema rschema
+                                                     :meta meta
                                                      :system-entities system-entities
                                                      :ref-ident-map ref-ident-map
                                                      :ident-ref-map ident-ref-map
@@ -57,7 +58,7 @@
                          {:keys [eavt aevt avet
                                  temporal-eavt temporal-aevt temporal-avet
                                  system-entities ref-ident-map ident-ref-map
-                                 schema rschema config max-tx op-count hash]} db-after
+                                 schema rschema config max-tx max-eid op-count hash meta]} db-after
                          _ (reset! report tx-report)
                          backend (kons/konserve-backend store (:crypto-hash? config))
                          eavt-flushed (di/-flush eavt backend)
@@ -79,14 +80,16 @@
                                                   :temporal-aevt-key temporal-aevt-flushed
                                                   :temporal-avet-key temporal-avet-flushed})))
                      (merge
-                      {:schema   schema
-                       :rschema  rschema
+                      {:schema schema
+                       :rschema rschema
                        :system-entities system-entities
                        :ref-ident-map ref-ident-map
                        :ident-ref-map ident-ref-map
-                       :config   config
+                       :config config
+                       :meta meta
                        :hash hash
                        :max-tx max-tx
+                       :max-eid max-eid
                        :op-count op-count
                        :eavt-key eavt-flushed
                        :aevt-key aevt-flushed
@@ -97,7 +100,6 @@
                          :temporal-avet-key temporal-avet-flushed}))))
                  {:sync? true})
     (throw-if-exception- @report)))
-
 
 (defn transact!
   [connection {:keys [tx-data]}]
@@ -198,15 +200,16 @@
               (dt/raise "Database does not exist." {:type :db-does-not-exist
                                                     :config config}))
           {:keys [eavt-key aevt-key avet-key temporal-eavt-key temporal-aevt-key temporal-avet-key
-                  schema rschema system-entities ref-ident-map ident-ref-map config max-tx op-count hash]
+                  schema rschema system-entities ref-ident-map ident-ref-map config max-tx max-eid op-count hash meta]
            :or {op-count 0}} stored-db
           empty (db/empty-db nil config)
           conn (d/conn-from-db (assoc empty
                                       :max-tx max-tx
+                                      :max-eid max-eid
                                       :config config
+                                      :meta meta
                                       :schema schema
                                       :hash hash
-                                      :max-eid (db/init-max-eid eavt-key)
                                       :op-count op-count
                                       :eavt eavt-key
                                       :aevt aevt-key
@@ -235,14 +238,16 @@
           {:keys [eavt aevt avet
                   temporal-eavt temporal-aevt temporal-avet
                   system-entities ref-ident-map ident-ref-map
-                  schema rschema config max-tx op-count hash]}
+                  schema rschema config max-tx max-eid op-count hash meta]}
           (db/empty-db nil config)
           backend (kons/konserve-backend store (:crypto-hash? config))]
       (k/assoc-in store [:db]
-                  (merge {:schema   schema
+                  (merge {:schema schema
                           :max-tx max-tx
+                          :max-eid max-eid
                           :op-count op-count
                           :hash hash
+                          :meta meta
                           :rschema  rschema
                           :system-entities system-entities
                           :ident-ref-map ident-ref-map

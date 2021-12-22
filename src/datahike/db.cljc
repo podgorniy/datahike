@@ -9,7 +9,7 @@
    [datahike.index :refer [-slice -seq -count -all -persistent! -transient] :as di]
    [datahike.datom :as dd :refer [datom datom-tx datom-added datom?]]
    [datahike.constants :as c :refer [ue0 e0 tx0 utx0 emax txmax system-schema]]
-   [datahike.tools :refer [get-time case-tree raise]]
+   [datahike.tools :refer [get-time case-tree raise] :as tools]
    [datahike.schema :as ds]
    [datahike.lru :refer [lru-datom-cache-factory]]
    [me.tonsky.persistent-sorted-set.arrays :as arrays]
@@ -147,7 +147,6 @@
 
 ;; ----------------------------------------------------------------------------
 
-
 (declare hash-datoms equiv-db empty-db resolve-datom validate-attr validate-attr-ident components->pattern indexing? no-history? multival? search-current-indices search-temporal-indices)
 #?(:cljs (declare pr-db))
 
@@ -163,9 +162,43 @@
       (update :aevt -persistent!)
       (update :avet -persistent!)))
 
+(defn validate-pattern
+  "Checks if database pattern is valid"
+  [pattern]
+  (let [[e a v tx added?] pattern]
+
+    (when-not (or (number? e)
+                  (nil? e)
+                  (and (vector? e) (= 2 (count e))))
+      (raise "Bad format for entity-id in pattern, must be a number, nil or vector of two elements."
+             {:error :search/pattern :e e :pattern pattern}))
+
+    (when-not (or (number? a)
+                  (keyword? a)
+                  (nil? a))
+      (raise "Bad format for attribute in pattern, must be a number, nil or a keyword."
+             {:error :search/pattern :a a :pattern pattern}))
+
+    (when-not (or (not (vector? v))
+                  (nil? v)
+                  (and (vector? v) (= 2 (count v))))
+      (raise "Bad format for value in pattern, must be a scalar, nil or a vector of two elements."
+             {:error :search/pattern :v v :pattern pattern}))
+
+    (when-not (or (nil? tx)
+                  (number? tx))
+      (raise "Bad format for transaction ID in pattern, must be a number or nil."
+             {:error :search/pattern :tx tx :pattern pattern}))
+
+    (when-not (or (nil? added?)
+                  (boolean? added?))
+      (raise "Bad format for added? in pattern, must be a boolean value or nil."
+             {:error :search/pattern :added? added? :pattern pattern}))))
+
 (defn- search-indices
   "Assumes correct pattern form, i.e. refs for ref-database"
   [eavt aevt avet pattern indexed? temporal-db?]
+  (validate-pattern pattern)
   (let [[e a v tx added?] pattern]
     (if (and (not temporal-db?) (false? added?))
       '()
@@ -201,7 +234,7 @@
                   (filter (fn [^Datom d] (= tx (datom-tx d))) (-all eavt)) ;; _ _ _ tx
                   (-all eavt)]))))
 
-(defrecord-updatable DB [schema eavt aevt avet temporal-eavt temporal-aevt temporal-avet max-eid max-tx op-count rschema hash config system-entities ident-ref-map ref-ident-map]
+(defrecord-updatable DB [schema eavt aevt avet temporal-eavt temporal-aevt temporal-avet max-eid max-tx op-count rschema hash config system-entities ident-ref-map ref-ident-map meta]
   #?@(:cljs
       [IHash (-hash [db] hash)
        IEquiv (-equiv [db other] (equiv-db db other))
@@ -957,6 +990,7 @@
         :system-entities system-entities
         :ref-ident-map ref-ident-map
         :ident-ref-map ident-ref-map
+        :meta (tools/meta-data)
         :op-count (if attribute-refs? (count ref-datoms) 0)}
        (when keep-history?                                  ;; no difference for attribute references since no update possible
          {:temporal-eavt (di/empty-index index :eavt index-config)
@@ -1013,6 +1047,7 @@
                       :op-count op-count
                       :hash (hash-datoms datoms)
                       :system-entities system-entities
+                      :meta (tools/meta-data)
                       :ref-ident-map ref-ident-map
                       :ident-ref-map ident-ref-map}
                      (when keep-history?
@@ -1444,10 +1479,8 @@
           (throw #?(:clj (ex-info err-msg err-map)
                     :cljs (error err-msg err-map))))))))
 
-
 ;; In context of `with-datom` we can use faster comparators which
 ;; do not check for nil (~10-15% performance gain in `transact`)
-
 
 (defn- with-datom [^DB db ^Datom datom]
   (validate-datom db datom)
@@ -1616,7 +1649,6 @@
       entity)
      (check-upsert-conflict entity)
      first)))                                         ;; getting eid from acc
-
 
 ;; multivals/reverse can be specified as coll or as a single value, trying to guess
 (defn- maybe-wrap-multival [db a-ident vs]
@@ -2126,7 +2158,14 @@
     (let [[entity & entities] es
           {:keys [config] :as db} (:db-after report)
           [e a v t op] entity
-          a-ident (if (:attribute-refs? config) (-ident-for db a) a)
+          a-ident (if (and (number? a) (:attribute-refs? config))
+                    (-ident-for db a)
+                    a)
+          a (if (:attribute-refs? config)
+              (-ref-for db a-ident)
+              (if (number? a)
+                (raise "Configuration mismatch: import data with attribute references can not be imported into a database with no attribute references." {:error :import/mismatch :data entity})
+                a-ident))
           max-eid (next-eid db)
           max-tid (inc (get-in report [:db-after :max-tx]))]
       (cond
@@ -2143,14 +2182,20 @@
 
         ;; meta entity
         (ds/meta-attr? a-ident)
-        (let [new-datom (dd/datom max-tid a v max-tid op)
-              new-e (.-e new-datom)]
-          (recur (-> (transact-report report new-datom)
+        (let [new-t (get-in migration-state [:tids t] max-tid)
+              new-datom (dd/datom new-t a v new-t op)
+              new-e (.-e new-datom)
+              upsert? (not (multival? db a-ident))]
+          (recur (-> (transact-report report new-datom upsert?)
                      (assoc-in [:db-after :max-tx] max-tid))
                  entities
                  (-> migration-state
                      (assoc-in [:tids e] new-e)
                      (assoc-in [:eids e] new-e))))
+
+        ;; tx not added yet
+        (nil? (get-in migration-state [:tids t]))
+        (recur (update-in report [:db-after :max-tx] inc) es (assoc-in migration-state [:tids t] max-tid))
 
         ;; ref not added yet
         (and (ref? db a) (nil? (get-in migration-state [:eids v])))
@@ -2164,5 +2209,7 @@
                                   (get-in migration-state [:eids v])
                                   v)
                                 (get-in migration-state [:tids t])
-                                op)]
-          (recur (transact-report report new-datom) entities (assoc-in migration-state [:eids e] (.-e new-datom))))))))
+                                op)
+              upsert? (and (not (multival? db a-ident))
+                           op)]
+          (recur (transact-report report new-datom upsert?) entities (assoc-in migration-state [:eids e] (.-e new-datom))))))))

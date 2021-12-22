@@ -25,13 +25,13 @@
                    [java.lang.reflect Method]
                    [java.util Date])))
 
-
 ;; ----------------------------------------------------------------------------
-
 
 (def ^:const lru-cache-size 100)
 
-(declare -collect -resolve-clause resolve-clause direct-getter-fn)
+(declare -collect -resolve-clause resolve-clause direct-getter-fn q)
+
+(defmulti q (fn [query & args] (type query)))
 
 ;; Records
 
@@ -44,9 +44,7 @@
 ;; or [ (Datom. 2 "Oleg" 1 55) ... ]
 (defrecord Relation [attrs tuples])
 
-
 ;; Utilities
-
 
 (defn single [coll]
   (assert (nil? (next coll)) "Expected single element")
@@ -165,9 +163,7 @@
                   acc (:tuples rel2)))
         (transient []) (:tuples rel1)))))))
 
-
 ;; built-ins
-
 
 (defn- translate-for [db a]
   (if (and (-> db db/-config :attribute-refs?) (keyword? a))
@@ -322,7 +318,16 @@
                 'str        str, 'pr-str pr-str, 'print-str print-str, 'println-str println-str, 'prn-str prn-str, 'subs subs
                 're-find    re-find, 're-matches re-matches, 're-seq re-seq
                 '-differ?   -differ?, 'get-else -get-else, 'get-some -get-some, 'missing? -missing?, 'ground identity, 'before? lesser?, 'after? greater?
-                'tuple vector, 'untuple identity})
+                'tuple vector, 'untuple identity
+                'q q
+                'datahike.query/q q
+                #'datahike.query/q q})
+
+(def clj-core-built-ins
+  #?(:clj
+     (dissoc (ns-publics 'clojure.core)
+             'eval)
+     :cljs {}))
 
 (def built-in-aggregates
   (letfn [(sum [coll] (reduce + 0 coll))
@@ -426,8 +431,6 @@
 
 (defn resolve-ins [context bindings values]
   (reduce resolve-in context (zipmap bindings values)))
-
-;;
 
 (def ^{:dynamic true
        :doc "List of symbols in current pattern that might potentially be resolved to refs"}
@@ -670,6 +673,7 @@
 (defn filter-by-pred [context clause]
   (let [[[f & args]] clause
         pred (or (get built-ins f)
+                 (get clj-core-built-ins f)
                  (context-resolve-val context f)
                  (resolve-sym f)
                  (resolve-method f)
@@ -687,6 +691,7 @@
   (let [[[f & args] out] clause
         binding (dpi/parse-binding out)
         fun (or (get built-ins f)
+                (get clj-core-built-ins f)
                 (context-resolve-val context f)
                 (resolve-sym f)
                 (resolve-method f)
@@ -705,7 +710,6 @@
                       (prod-rel production (empty-rel binding))
                       (reduce sum-rel rels)))
                   (prod-rel (assoc production :tuples []) (empty-rel binding)))
-
         idx->const (reduce-kv (fn [m k v]
                                 (if-let [c (k (:consts context))]
                                   (assoc m v c)     ;; different value at v for each tupple
@@ -736,17 +740,24 @@
 (defn expand-rule [clause context used-args]
   (let [[rule & call-args] clause
         seqid (swap! rule-seqid inc)
-        branches (get (:rules context) rule)]
-    (for [branch branches
-          :let [[[_ & rule-args] & clauses] branch
-                replacements (zipmap rule-args call-args)]]
-      (walk/postwalk
-       #(if (free-var? %)
-          (db/some-of
-           (replacements %)
-           (symbol (str (name %) "__auto__" seqid)))
-          %)
-       clauses))))
+        branches (get (:rules context) rule)
+        call-args-new (map #(if (free-var? %) % (symbol (str "?__auto__" %2)))
+                           call-args
+                           (range))
+        consts (->> (map vector call-args-new call-args)
+                    (filter (fn [[new old]] (not= new old)))
+                    (into {}))]
+    [(for [branch branches
+           :let [[[_ & rule-args] & clauses] branch
+                 replacements (zipmap rule-args call-args-new)]]
+       (walk/postwalk
+        #(if (free-var? %)
+           (db/some-of
+            (replacements %)
+            (symbol (str (name %) "__auto__" seqid)))
+           %)
+        clauses))
+     consts]))
 
 (defn remove-pairs [xs ys]
   (let [pairs (->> (map vector xs ys)
@@ -819,11 +830,11 @@
                     ;; need to expand rule to branches
                     (let [used-args (assoc (:used-args frame) rule
                                            (conj (get (:used-args frame) rule []) call-args))
-                          branches (expand-rule rule-clause context used-args)]
+                          [branches rule-consts] (expand-rule rule-clause context used-args)]
                       (recur (concat
                               (for [branch branches]
                                 {:prefix-clauses prefix-clauses
-                                 :prefix-context prefix-context
+                                 :prefix-context (update prefix-context :consts merge rule-consts)
                                  :clauses (concatv branch next-clauses)
                                  :used-args used-args
                                  :pending-guards pending-gs})
@@ -1097,25 +1108,27 @@
   (->> (-collect context symbols)
        (map vec)))
 
-(defmulti q (fn [query & args] (type query)))
-
 (defmethod q clojure.lang.LazySeq [query & args]
   (q {:query query :args args}))
 
 (defmethod q clojure.lang.PersistentVector [query & args]
   (q {:query query :args args}))
 
+(defmethod q clojure.lang.PersistentList [query & args]
+  (q {:query query :args args}))
+
 (defmethod q clojure.lang.PersistentArrayMap [query-map & inputs]
-  (let [query (if (contains? query-map :query) (:query query-map) query-map)
-        query (if (string? query) (edn/read-string query) query)
-        args (if (contains? query-map :args) (:args query-map) inputs)
-        parsed-q (memoized-parse-query query)
-        find (:qfind parsed-q)
+  (let [query         (if (contains? query-map :query) (:query query-map) query-map)
+        query         (if (string? query) (edn/read-string query) query)
+        query         (if (= 'quote (first query)) (second query) query)
+        args          (if (contains? query-map :args) (:args query-map) inputs)
+        parsed-q      (memoized-parse-query query)
+        find          (:qfind parsed-q)
         find-elements (dpip/find-elements find)
-        find-vars (dpi/find-vars find)
-        result-arity (count find-elements)
-        with (:qwith parsed-q)
-        returnmaps (:qreturnmaps parsed-q)
+        find-vars     (dpi/find-vars find)
+        result-arity  (count find-elements)
+        with          (:qwith parsed-q)
+        returnmaps    (:qreturnmaps parsed-q)
         ;; TODO utilize parser
         all-vars      (concat find-vars (map :symbol with))
         query         (cond-> query
